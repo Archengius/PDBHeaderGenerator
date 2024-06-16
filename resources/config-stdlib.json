@@ -1,0 +1,178 @@
+{
+  "ExternalHeaders":
+  [
+    {
+      "IncludeName": "unordered_map",
+      "ContainedTypes": [ "std::unordered_map" ]
+    },
+    {
+      "IncludeName": "unordered_set",
+      "ContainedTypes": [ "std::unordered_set" ]
+    },
+    {
+      "IncludeName": "set",
+      "ContainedTypes": [ "std::set" ]
+    },
+    {
+      "IncludeName": "map",
+      "ContainedTypes": [ "std::map" ]
+    },
+    {
+      "IncludeName": "vector",
+      "ContainedTypes": [ "std::vector" ]
+    },
+    {
+      "IncludeName": "list",
+      "ContainedTypes":
+      [
+        "std::list",
+        "std::_List_const_iterator"
+      ]
+    },
+    {
+      "IncludeName": "array",
+      "ContainedTypes": [ "std::array" ]
+    },
+    {
+      "IncludeName": "deque",
+      "ContainedTypes": [ "std::deque" ]
+    },
+    {
+      "IncludeName": "stack",
+      "ContainedTypes": [ "std::stack" ]
+    },
+    {
+      "IncludeName": "string",
+      "ContainedTypes":
+      [
+        "std::basic_string",
+        "std::char_traits"
+      ]
+    },
+    {
+      "IncludeName": "memory",
+      "ContainedTypes":
+      [
+        "std::unique_ptr",
+        "std::shared_ptr",
+        "std::weak_ptr",
+        "std::allocator"
+      ]
+    },
+    {
+      "IncludeName": "atomic",
+      "ContainedTypes": [ "std::atomic" ]
+    },
+    {
+      "IncludeName": "initializer_list",
+      "ContainedTypes": [ "std::initializer_list" ]
+    },
+    {
+      "IncludeName": "queue",
+      "ContainedTypes": [ "std::queue" ]
+    },
+    {
+      "IncludeName": "thread",
+      "ContainedTypes":
+      [
+        "std::thread"
+      ]
+    },
+    {
+      "IncludeName": "mutex",
+      "ContainedTypes":
+      [
+        "std::condition_variable",
+        "std::scoped_lock",
+        "std::mutex"
+      ]
+    },
+    {
+      "IncludeName": "tuple",
+      "ContainedTypes": [ "std::tuple" ]
+    },
+    {
+      "IncludeName": "utility",
+      "ContainedTypes":
+      [
+        "std::pair"
+      ]
+    },
+    {
+      "IncludeName": "exception",
+      "ContainedTypes":
+      [
+        "std::exception",
+        "std::bad_cast",
+        "std::runtime_error"
+      ]
+    },
+    {
+      "IncludeName": "fstream",
+      "ContainedTypes":
+      [
+        "std::basic_ofstream",
+        "std::basic_ifstream"
+      ]
+    },
+    {
+      "IncludeName": "filesystem",
+      "ContainedTypes":
+      [
+        "std::filesystem::path"
+      ]
+    },
+    {
+      "IncludeName": "iterator",
+      "ContainedTypes":
+      [
+        "std::iterator",
+        "std::back_insert_iterator"
+      ]
+    },
+    {
+      "IncludeName": "type_traits",
+      "ContainedTypes":
+      [
+        "std::hash",
+        "std::less",
+        "std::equal_to"
+      ]
+    },
+    {
+      "IncludeName": "typeinfo",
+      "ContainedTypes": [ "std::type_info" ]
+    },
+    {
+      "IncludeName": "typeindex",
+      "ContainedTypes": [ "std::type_index" ]
+    }
+  ],
+  "ExternalNamespaces":
+  [
+    "std"
+  ],
+  "TypeRemap":
+  [
+    {
+      "OriginalTypeName": "std::vector<?1, std::allocator<?1>>",
+      "ReplacementTypeName": "std::vector<?1>"
+    },
+    {
+      "OriginalTypeName": "std::map<?1, ?2, std::less<?1>, std::allocator<std::pair<const ?1, ?2>>>",
+      "ReplacementTypeName": "std::map<?1, ?2>"
+    },
+    {
+      "OriginalTypeName": "std::set<?1, std::less<?1>, std::allocator<?1>>",
+      "ReplacementTypeName": "std::set<?1>"
+    },
+    {
+      "OriginalTypeName": "std::basic_string<char, std::char_traits<char>, std::allocator<char>>",
+      "ReplacementTypeName": "std::string"
+    },
+    {
+      "OriginalTypeName": "std::basic_string<wchar_t, std::char_traits<wchar_t>, std::allocator<wchar_t>>",
+      "ReplacementTypeName": "std::wstring"
+    }
+  ]
+}

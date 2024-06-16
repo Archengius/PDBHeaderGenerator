@@ -1,0 +1,14 @@
+{
+  "ExternalHeaders": [
+    {
+      "IncludeName": "guiddef.h",
+      "ContainedTypes": [
+        "_GUID"
+      ]
+    }
+  ],
+  "ExternalGlobalData":
+  [
+    "FOLDERID_LocalAppDataLow"
+  ]
+}

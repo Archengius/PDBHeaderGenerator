@@ -1,0 +1,32 @@
+{
+  "DependencyConfigs": [
+    "config-stdlib",
+    "config-windows"
+  ],
+  "ExternalHeaders": [
+    {
+      "IncludeName": "format.h",
+      "ContainedNamespaces": [ "fmt" ]
+    },
+    {
+      "IncludeName": "msgpack.hpp",
+      "ContainedNamespaces": [ "msgpack" ]
+    },
+    {
+      "IncludeName": "boost/container/static_vector.hpp",
+      "ContainedTypes": [
+        "boost::container::static_vector"
+      ]
+    },
+    {
+      "IncludeName": "boost/qvm/lite.hpp",
+      "ContainedNamespaces": [ "boost::qvm" ]
+    }
+  ],
+  "ExternalNamespaces":
+  [
+    "fmt",
+    "msgpack",
+    "boost"
+  ]
+}
