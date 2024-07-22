@@ -1485,3 +1485,15 @@ void HeaderGenerator::Generate(const CComPtr<IDiaSymbol>& InGlobalSymbol)
         HeaderFile->GenerateCppFile();
     }
 }
+
+bool HeaderGenerator::IsHeaderFilenameOccupiedByManualHeader(const std::wstring &InHeaderFilename) const {
+    return HeaderOverrideNameToFilePath.find(InHeaderFilename) != HeaderOverrideNameToFilePath.end();
+}
+
+const std::wstring *HeaderGenerator::FindOverridenManualHeaderForType(const SymbolNameInfo &ClassName) const {
+    auto it = HeaderOverridenTypeNameToHeaderName.find(ClassName.OriginalFullName);
+    if (it != HeaderOverridenTypeNameToHeaderName.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
