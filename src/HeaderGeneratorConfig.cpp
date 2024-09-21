@@ -47,36 +47,6 @@ bool HeaderGeneratorConfigManager::LoadConfigFrom(const std::filesystem::path& I
     }
 
     // Merge the current config file with the global one, overwriting the dependencies or appending to them
-    MergedConfig.ExternalGlobalData.insert(MergedConfig.ExternalGlobalData.end(), LoadedConfig.ExternalGlobalData.begin(), LoadedConfig.ExternalGlobalData.end());
-    MergedConfig.ExternalGlobalFunctions.insert(MergedConfig.ExternalGlobalFunctions.end(), LoadedConfig.ExternalGlobalFunctions.begin(), LoadedConfig.ExternalGlobalFunctions.end());
-    MergedConfig.ExternalNamespaces.insert(MergedConfig.ExternalNamespaces.end(), LoadedConfig.ExternalNamespaces.begin(), LoadedConfig.ExternalNamespaces.end());
-    MergedConfig.TypeRemap.insert(MergedConfig.TypeRemap.end(), LoadedConfig.TypeRemap.begin(), LoadedConfig.TypeRemap.end());
-    MergedConfig.ExternalTemplatePredeclarationWhitelist.insert(MergedConfig.ExternalTemplatePredeclarationWhitelist.end(), LoadedConfig.ExternalTemplatePredeclarationWhitelist.begin(), LoadedConfig.ExternalTemplatePredeclarationWhitelist.end());
-    MergedConfig.HeaderOverrides.insert(MergedConfig.HeaderOverrides.end(), LoadedConfig.HeaderOverrides.begin(), LoadedConfig.HeaderOverrides.end());
-
-    for ( const auto& [OriginalName, RemappedName] : LoadedConfig.GlobalDataNameRemap )
-    {
-        MergedConfig.GlobalDataNameRemap.insert_or_assign( OriginalName, RemappedName );
-    }
-
-    std::unordered_map<std::string, int32_t> ExistingHeaderIndices;
-    for ( int32_t i = 0; i < MergedConfig.ExternalHeaders.size(); i++ )
-    {
-        ExistingHeaderIndices.insert({ MergedConfig.ExternalHeaders[i].IncludeName, i });
-    }
-
-    for ( const ExternalHeaderDefinition& HeaderDefinition : LoadedConfig.ExternalHeaders )
-    {
-        if ( const auto Iterator = ExistingHeaderIndices.find( HeaderDefinition.IncludeName ); Iterator != ExistingHeaderIndices.end() )
-        {
-            ExternalHeaderDefinition& ExistingDefinition = MergedConfig.ExternalHeaders[ Iterator->second ];
-            ExistingDefinition.ContainedNamespaces.insert( ExistingDefinition.ContainedNamespaces.end(), HeaderDefinition.ContainedNamespaces.begin(), HeaderDefinition.ContainedNamespaces.end() );
-            ExistingDefinition.ContainedTypes.insert( ExistingDefinition.ContainedTypes.end(), HeaderDefinition.ContainedTypes.begin(), HeaderDefinition.ContainedTypes.end() );
-        }
-        else
-        {
-            MergedConfig.ExternalHeaders.push_back( HeaderDefinition );
-        }
-    }
+    MergedConfig.Merge(LoadedConfig);
     return true;
 }

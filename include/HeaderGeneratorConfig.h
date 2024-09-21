@@ -61,6 +61,43 @@ struct HeaderGeneratorConfig
     std::vector<std::string> ExternalTemplatePredeclarationWhitelist;
     std::vector<TypeRemapDefinition> TypeRemap;
     std::vector<ManualHeaderDefinition> HeaderOverrides;
+    std::vector<std::string> LibrariesConsideredInternal;
+
+    void Merge(const HeaderGeneratorConfig& OtherConfig)
+    {
+        ExternalGlobalData.insert(ExternalGlobalData.end(), OtherConfig.ExternalGlobalData.begin(), OtherConfig.ExternalGlobalData.end());
+        ExternalGlobalFunctions.insert(ExternalGlobalFunctions.end(), OtherConfig.ExternalGlobalFunctions.begin(), OtherConfig.ExternalGlobalFunctions.end());
+        ExternalNamespaces.insert(ExternalNamespaces.end(), OtherConfig.ExternalNamespaces.begin(), OtherConfig.ExternalNamespaces.end());
+        TypeRemap.insert(TypeRemap.end(), OtherConfig.TypeRemap.begin(), OtherConfig.TypeRemap.end());
+        ExternalTemplatePredeclarationWhitelist.insert(ExternalTemplatePredeclarationWhitelist.end(), OtherConfig.ExternalTemplatePredeclarationWhitelist.begin(), OtherConfig.ExternalTemplatePredeclarationWhitelist.end());
+        HeaderOverrides.insert(HeaderOverrides.end(), OtherConfig.HeaderOverrides.begin(), OtherConfig.HeaderOverrides.end());
+        LibrariesConsideredInternal.insert(LibrariesConsideredInternal.end(), OtherConfig.LibrariesConsideredInternal.begin(), OtherConfig.LibrariesConsideredInternal.end());
+
+        for ( const auto& [OriginalName, RemappedName] : OtherConfig.GlobalDataNameRemap )
+        {
+            GlobalDataNameRemap.insert_or_assign( OriginalName, RemappedName );
+        }
+
+        std::unordered_map<std::string, int32_t> ExistingHeaderIndices;
+        for ( int32_t i = 0; i < ExternalHeaders.size(); i++ )
+        {
+            ExistingHeaderIndices.insert({ ExternalHeaders[i].IncludeName, i });
+        }
+
+        for ( const ExternalHeaderDefinition& HeaderDefinition : OtherConfig.ExternalHeaders )
+        {
+            if ( const auto Iterator = ExistingHeaderIndices.find( HeaderDefinition.IncludeName ); Iterator != ExistingHeaderIndices.end() )
+            {
+                ExternalHeaderDefinition& ExistingDefinition = ExternalHeaders[ Iterator->second ];
+                ExistingDefinition.ContainedNamespaces.insert( ExistingDefinition.ContainedNamespaces.end(), HeaderDefinition.ContainedNamespaces.begin(), HeaderDefinition.ContainedNamespaces.end() );
+                ExistingDefinition.ContainedTypes.insert( ExistingDefinition.ContainedTypes.end(), HeaderDefinition.ContainedTypes.begin(), HeaderDefinition.ContainedTypes.end() );
+            }
+            else
+            {
+                ExternalHeaders.push_back( HeaderDefinition );
+            }
+        }
+    }
 
     friend void to_json(nlohmann::json& Json, const HeaderGeneratorConfig& Config)
     {
@@ -73,6 +110,7 @@ struct HeaderGeneratorConfig
         Json["ExternalTemplatePredeclarationWhitelist"] = Config.ExternalTemplatePredeclarationWhitelist;
         Json["HeaderOverrides"] = Config.HeaderOverrides;
         Json["TypeRemap"] = Config.TypeRemap;
+        Json["LibrariesConsideredInternal"] = Config.LibrariesConsideredInternal;
     }
     friend void from_json(const nlohmann::json& Json, HeaderGeneratorConfig& Config)
     {
@@ -80,7 +118,10 @@ struct HeaderGeneratorConfig
         {
             Json.at("DependencyConfigs").get_to(Config.DependencyConfigs);
         }
-        Json.at("ExternalHeaders").get_to(Config.ExternalHeaders);
+        if (Json.contains("ExternalHeaders"))
+        {
+            Json.at("ExternalHeaders").get_to(Config.ExternalHeaders);
+        }
         if (Json.contains("ExternalGlobalData"))
         {
             Json.at("ExternalGlobalData").get_to(Config.ExternalGlobalData);
@@ -108,6 +149,10 @@ struct HeaderGeneratorConfig
         if (Json.contains("TypeRemap"))
         {
             Json.at("TypeRemap").get_to(Config.TypeRemap);
+        }
+        if (Json.contains("LibrariesConsideredInternal"))
+        {
+            Json.at("LibrariesConsideredInternal").get_to(Config.LibrariesConsideredInternal);
         }
     }
 };

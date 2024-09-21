@@ -183,6 +183,7 @@ class HeaderGenerator final : public ITypeResolutionProvider
     std::unordered_map<DWORD, CComPtr<IDiaSymbol>> NestedTypeParentCache;
     // Cache of lexical parent to it's owner compilation unit
     std::vector<std::shared_ptr<CompilationUnit>> AllCompilationUnits;
+    std::unordered_set<std::wstring> LibrariesConsideredInternal;
     std::wstring DllName;
 public:
     explicit HeaderGenerator( const std::wstring& InDllName, const std::filesystem::path& InOutputDirectory );
