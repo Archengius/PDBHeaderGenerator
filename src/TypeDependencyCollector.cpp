@@ -291,12 +291,15 @@ void TypeDependencyCollectorBase::CollectDependenciesForTemplateInstantiation( c
         if ( TypeDeclaration->TemplateArguments.Arguments.empty() )
         {
             const CComPtr<IDiaSymbol> UDTSymbol = TypeResolver->ResolveUDTByFullName( SymbolNameInfo.ToString( SymbolNameInfo::IncludeNamespace ) );
-            assert( UDTSymbol && L"Failed to resolve UDT type used as a template instantiation argument" );
 
             // We only need a pre-declaration for this type since it has no template arguments
             if ( UDTSymbol )
             {
                 AddDependency( TypeDependency::UserDefinedType( UDTSymbol ), !bTemplateNeedsFullType );
+            }
+            else
+            {
+                std::wcerr << L"Failed to resolve UDT type used as a template instantiation argument: " << SymbolNameInfo.ToString() << L". This will result in a compilation error unless manual definition is provided." << std::endl;
             }
         }
         // If we have template arguments, we need to either resolve the template instantiation symbol (which is extremely slow for templates with huge amount of instantiations)
