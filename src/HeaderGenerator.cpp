@@ -1115,6 +1115,17 @@ const std::wstring* HeaderGenerator::FindExternalHeaderForType(const SymbolNameI
     return nullptr;
 }
 
+bool HeaderGenerator::IsHeaderFilenameOccupiedByManualHeader(const std::wstring& InHeaderFilename) const
+{
+    return HeaderOverrideNameToFilePath.find(InHeaderFilename) != HeaderOverrideNameToFilePath.end();
+}
+
+const std::wstring* HeaderGenerator::FindOverridenManualHeaderForType(const SymbolNameInfo& ClassName) const
+{
+    const auto Iterator = HeaderOverridenTypeNameToHeaderName.find(ClassName.ToString(SymbolNameInfo::IncludeNamespace));
+    return Iterator != HeaderOverridenTypeNameToHeaderName.end() ? &Iterator->second : nullptr;
+}
+
 UserDefinedTypeInfo* HeaderGenerator::FindOrAddUserDefinedType(const CComPtr<IDiaSymbol>& ClassSymbol)
 {
     // Strip any CV modifiers from the UDT type
