@@ -224,6 +224,7 @@ class PointerTypeDeclaration final : public ITypeDeclaration
 public:
     std::shared_ptr<ITypeDeclaration> PointeeType;
     bool bIsReference{false};
+    std::shared_ptr<ITypeDeclaration> OwnerType;
 
     ETypeDeclarationId GetId() const override { return ETypeDeclarationId::PointerType; }
     void Print(FormattedTextWriter& TextWriter, const TypeFormattingRules& Rules) const override;

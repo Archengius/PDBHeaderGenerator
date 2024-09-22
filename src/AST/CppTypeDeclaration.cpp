@@ -629,6 +629,14 @@ void PointerTypeDeclaration::Print(FormattedTextWriter& TextWriter, const TypeFo
     // Print our pointee type first
     PointeeType->Print(TextWriter, Rules.InheritableFlags());
 
+    // If there is an owner type, this is a member function pointer, which precedes the pointer token
+    if ( OwnerType )
+    {
+        TextWriter.Append(L" ");
+        OwnerType->Print(TextWriter, Rules);
+        TextWriter.Append(L"::");
+    }
+
     // Print pointer or reference
     TextWriter.Append(bIsReference ? L"&" : L"*");
 
@@ -645,7 +653,8 @@ bool PointerTypeDeclaration::Identical(const std::shared_ptr<ITypeDeclaration>& 
     {
         const PointerTypeDeclaration& Other = static_cast<PointerTypeDeclaration&>(*InOtherDeclaration);
         return bIsConst == Other.bIsConst && bIsReference == Other.bIsReference &&
-            StaticIdentical( PointeeType, Other.PointeeType );
+            StaticIdentical( PointeeType, Other.PointeeType ) &&
+            StaticIdentical( OwnerType, Other.OwnerType );
     }
     return false;
 }
@@ -657,7 +666,8 @@ bool PointerTypeDeclaration::Match(const std::shared_ptr<ITypeDeclaration>& InMa
         const PointerTypeDeclaration& Other = static_cast<PointerTypeDeclaration&>(*InMatchAgainst);
         return bIsConst == Other.bIsConst &&
             bIsReference == Other.bIsReference &&
-            StaticMatch( PointeeType, Other.PointeeType, MatchContext );
+            StaticMatch( PointeeType, Other.PointeeType, MatchContext ) &&
+            StaticMatch( OwnerType, Other.OwnerType, MatchContext );
     }
     return false;
 }
@@ -666,6 +676,7 @@ std::shared_ptr<ITypeDeclaration> PointerTypeDeclaration::Substitute(const TypeD
 {
     std::shared_ptr<PointerTypeDeclaration> PointerType = std::make_shared<PointerTypeDeclaration>( *this );
     PointerType->PointeeType = StaticSubstitute( PointeeType, MatchContext );
+    PointerType->OwnerType = StaticSubstitute( OwnerType, MatchContext );
     return PointerType;
 }
 
@@ -680,6 +691,7 @@ size_t PointerTypeDeclaration::GetDeclarationHash() const
     HashCombine( PointeeHash, GetId() );
     HashCombine( PointeeHash, bIsConst );
     HashCombine( PointeeHash, bIsReference );
+    HashCombine( PointeeHash, StaticGetDeclarationHash( OwnerType ) );
     return PointeeHash;
 }
 
@@ -1177,11 +1189,8 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParseCompleteTypeDeclara
             return CurrentType;
         }
         // Parse function signature type, or dumb type ordering rules
-        else if ( NextTypeToken.Type == ETypeTextToken::LBracket )
+        else if ( NextTypeToken.Type == ETypeTextToken::LBracket || NextTypeToken.Type == ETypeTextToken::CallingConvention )
         {
-            ConsumeNextToken();
-            NextTypeToken = PeekNextToken();
-
             const std::shared_ptr<ITypeDeclaration> FunctionTypeDeclaration = ParseFunctionPointerDeclaration( CurrentType );
             if ( FunctionTypeDeclaration == nullptr )
             {
@@ -1189,6 +1198,38 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParseCompleteTypeDeclara
                 return nullptr;
             }
             return FunctionTypeDeclaration;
+        }
+        // This could be a declaration of the pointer to member type, or a part that is unrelated to this type. We need to parse it to be able to tell for sure
+        else if ( NextTypeToken.Type == ETypeTextToken::Identifier )
+        {
+            FTypeTextParseHelper ForkedTypeParser = *this;
+            const std::shared_ptr<ITypeDeclaration> PotentialOuterTypeIdentifier = ForkedTypeParser.ParseSimpleTypeDeclaration();
+            const TypeTextToken PotentialScopeDelimiterToken = ForkedTypeParser.ConsumeNextToken();
+            const TypeTextToken PotentialPointerToken = ForkedTypeParser.ConsumeNextToken();
+
+            if ( PotentialOuterTypeIdentifier && PotentialScopeDelimiterToken.Type == ETypeTextToken::ScopeDelimiter && PotentialPointerToken.Type == ETypeTextToken::Pointer )
+            {
+                // Consume all the tokens we digested
+                ParseSimpleTypeDeclaration();
+                ConsumeNextToken();
+                ConsumeNextToken();
+
+                // Construct and initialize the pointer to member type declaration
+                const std::shared_ptr<PointerTypeDeclaration> MemberPointerTypeDeclaration = std::make_shared<PointerTypeDeclaration>();
+
+                MemberPointerTypeDeclaration->PointeeType = CurrentType;
+                MemberPointerTypeDeclaration->OwnerType = PotentialOuterTypeIdentifier;
+                MemberPointerTypeDeclaration->bIsReference = false;
+
+                // This could be a multi-layer pointer type, e.g. pointer to a pointer to a pointer to member, so we keep parsing from this point on
+                // in case we encounter additional type declaration details later on
+                CurrentType = MemberPointerTypeDeclaration;
+            }
+            else
+            {
+                // If this is not a pointer to member type, we are done parsing this type declaration
+                return CurrentType;
+            }
         }
         // Any other token we are not aware of, return the current type
         else
@@ -1206,33 +1247,64 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParseFunctionPointerDecl
     std::optional<ECallingConvention> CallingConvention;
     bool bIsFunctionTypeConst = false;
     bool bIsPotentiallyPointerOrReferenceToArray = true;
+    bool bIsFunctionPointerType = false;
 
-    // If this is an identifier (or a global namespace scope delimiter), we are parsing a member function pointer type
-    if ( NextTypeToken.Type == ETypeTextToken::Identifier || NextTypeToken.Type == ETypeTextToken::ScopeDelimiter )
-    {
-        OuterTypeIdentifier = ParseSimpleTypeDeclaration();
-        if ( !OuterTypeIdentifier )
-        {
-            assert(!L"Failed to parse member function owner class typename when parsing member function pointer declaration");
-            return nullptr;
-        }
-        NextTypeToken = PeekNextToken();
-
-        // Next token should be a scope delimiter following the type and separating it from function pointer
-        if ( NextTypeToken.Type != ETypeTextToken::ScopeDelimiter )
-        {
-            assert(!L"Expected ::, got another token when parsing member function pointer class name");
-            return nullptr;
-        }
+    // Attempt to parse a calling convention if it is the first token encountered after the return type
+    if ( NextTypeToken.Type == ETypeTextToken::CallingConvention ) {
         ConsumeNextToken();
+        CallingConvention = NextTypeToken.CallingConvention;
         NextTypeToken = PeekNextToken();
-        // Member function pointer syntax definitely cannot be parsed as reference to array
+        // If we found a calling convention, this is not a reference to array
         bIsPotentiallyPointerOrReferenceToArray = false;
     }
 
+    // We should always expect the first token to be an opening bracket, either for argument list or for member function declaration
+    assert(NextTypeToken.Type == ETypeTextToken::LBracket && L"Expected ( following the function return type declaration, got a different token");
+    ConsumeNextToken();
+    NextTypeToken = PeekNextToken();
+
+    // Attempt to parse a calling convention if it is the first token encountered after the argument list. In that case, this is definitely a function pointer declaration
+    if ( NextTypeToken.Type == ETypeTextToken::CallingConvention && !CallingConvention.has_value() ) {
+        ConsumeNextToken();
+        CallingConvention = NextTypeToken.CallingConvention;
+        NextTypeToken = PeekNextToken();
+        // If we found a calling convention, this is not a reference to array
+        bIsPotentiallyPointerOrReferenceToArray = false;
+        bIsFunctionPointerType = true;
+    }
+
+    // If this is an identifier (or a global namespace scope delimiter), we are parsing a member function pointer type
+    if ( NextTypeToken.Type == ETypeTextToken::Identifier || NextTypeToken.Type == ETypeTextToken::ScopeDelimiter ) {
+
+        // This can end up being a type of the first argument if we are parsing the argument list and not the member function pointer declaration,
+        // so attempt to parse the type separately first and only commit if we succeeded
+        FTypeTextParseHelper ForkedTypeParser = *this;
+        const std::shared_ptr<ITypeDeclaration> PotentialOuterTypeIdentifier = ForkedTypeParser.ParseSimpleTypeDeclaration();
+        const TypeTextToken PotentialNextToken = ForkedTypeParser.PeekNextToken();
+
+        // If this is an actual member function pointer declaration, next type token should always be a scope delimiter
+        // delimiting the outer type from the function pointer declaration. If it is not, we are parsing an argument list instead, and should discard our partial parsing results
+        if ( PotentialOuterTypeIdentifier && PotentialNextToken.Type == ETypeTextToken::ScopeDelimiter ) {
+
+            // Consume all the tokens that we speculatively consumed before
+            ParseSimpleTypeDeclaration();
+            NextTypeToken = PotentialNextToken;
+            OuterTypeIdentifier = PotentialOuterTypeIdentifier;
+
+            // Next token should be a scope delimiter following the type and separating it from function pointer
+            if (NextTypeToken.Type != ETypeTextToken::ScopeDelimiter) {
+                assert(!L"Expected ::, got another token when parsing member function pointer class name");
+                return nullptr;
+            }
+            ConsumeNextToken();
+            NextTypeToken = PeekNextToken();
+            // Member function pointer syntax definitely cannot be parsed as reference to array
+            bIsPotentiallyPointerOrReferenceToArray = false;
+        }
+    }
+
     // Potentially parse calling convention in case we did not parse a outer type
-    if ( OuterTypeIdentifier == nullptr && NextTypeToken.Type == ETypeTextToken::CallingConvention )
-    {
+    if (OuterTypeIdentifier == nullptr && NextTypeToken.Type == ETypeTextToken::CallingConvention && !CallingConvention.has_value()) {
         ConsumeNextToken();
         CallingConvention = NextTypeToken.CallingConvention;
         NextTypeToken = PeekNextToken();
@@ -1241,102 +1313,111 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParseFunctionPointerDecl
     }
 
     // Potentially consume out-of-order const modifier that would be applied to the pointer
-    if ( NextTypeToken.Type == ETypeTextToken::TypeModifier && NextTypeToken.TypeModifier == ETypeModifier::Const )
-    {
+    if (NextTypeToken.Type == ETypeTextToken::TypeModifier && NextTypeToken.TypeModifier == ETypeModifier::Const) {
         ConsumeNextToken();
         bIsFunctionTypeConst = true;
         NextTypeToken = PeekNextToken();
     }
 
-    // Next token should be a function pointer type (or reference)
-    // Reference is only valid if this function declaration can be parsed as pointer to array
-    if ( NextTypeToken.Type != ETypeTextToken::Pointer && !(NextTypeToken.Type == ETypeTextToken::Reference && bIsPotentiallyPointerOrReferenceToArray) )
+    // If the next token is not a pointer or reference, this is a function type declaration and not a function pointer declaration
+    // In that case we do not need to parse second layer of the calling convention and const-ness of the function pointer, but can skip directly to the argument list
+    // Note that this declaration syntax is only valid for global function prototypes, and as such cannot be used if we already parsed an outer type
+    // We also have to parse the function pointer if we already parsed it being marked with const modifier
+    // We also have to treat this as a member function pointer declaration if we encountered a calling convention declaration inside the argument list
+    if ( NextTypeToken.Type == ETypeTextToken::Pointer || NextTypeToken.Type == ETypeTextToken::Reference || OuterTypeIdentifier != nullptr || bIsFunctionTypeConst || bIsFunctionPointerType )
     {
-        assert(!L"Expected pointer type in the function pointer declaration, got another token");
-        return nullptr;
-    }
-    const bool bParsedReferenceInsteadOfPointer = NextTypeToken.Type == ETypeTextToken::Reference;
-    ConsumeNextToken();
-    NextTypeToken = PeekNextToken();
-
-    // Potentially consume calling convention if we have not done so before
-    // We cannot parse calling convention if we parsed reference instead of a pointer
-    if ( NextTypeToken.Type == ETypeTextToken::CallingConvention && !CallingConvention.has_value() && !bParsedReferenceInsteadOfPointer )
-    {
-        ConsumeNextToken();
-        CallingConvention = NextTypeToken.CallingConvention;
-        NextTypeToken = PeekNextToken();
-        // If we found a calling convention, this is not an reference to array
-        bIsPotentiallyPointerOrReferenceToArray = false;
-    }
-
-    // And also potentially consume const modifier
-    if ( NextTypeToken.Type == ETypeTextToken::TypeModifier && NextTypeToken.TypeModifier == ETypeModifier::Const && !bIsFunctionTypeConst )
-    {
-        ConsumeNextToken();
-        bIsFunctionTypeConst = true;
-        NextTypeToken = PeekNextToken();
-    }
-
-    // Next token should be a closing bracket for pointer declaration
-    if ( NextTypeToken.Type != ETypeTextToken::RBracket )
-    {
-        assert(!L"Expected ) closing the function pointer declaration, got another token");
-        return nullptr;
-    }
-    ConsumeNextToken();
-    NextTypeToken = PeekNextToken();
-
-    // Check if this is actually a pointer/reference to array declaration. In that case, next symbol would be an array left bracket, followed by optional dimension and closing bracket
-    // After that, we consider the type declaration complete, and nothing past it is parsed
-    if ( NextTypeToken.Type == ETypeTextToken::ArrayLBracket && bIsPotentiallyPointerOrReferenceToArray )
-    {
+        // Next token should be a function pointer type (or reference)
+        // Reference is only valid if this function declaration can be parsed as pointer to array
+        if ( NextTypeToken.Type != ETypeTextToken::Pointer && !(NextTypeToken.Type == ETypeTextToken::Reference && bIsPotentiallyPointerOrReferenceToArray) )
+        {
+            assert(!L"Expected pointer type in the function pointer declaration, got another token");
+            return nullptr;
+        }
+        const bool bParsedReferenceInsteadOfPointer = NextTypeToken.Type == ETypeTextToken::Reference;
         ConsumeNextToken();
         NextTypeToken = PeekNextToken();
+        bIsFunctionPointerType = true;
 
-        // Potentially digest the static array dimensions
-        std::optional<int32_t> StaticArrayDimension;
-        if ( NextTypeToken.Type == ETypeTextToken::Integer )
+        // Potentially consume calling convention if we have not done so before
+        // We cannot parse calling convention if we parsed reference instead of a pointer
+        if ( NextTypeToken.Type == ETypeTextToken::CallingConvention && !CallingConvention.has_value() && !bParsedReferenceInsteadOfPointer )
         {
             ConsumeNextToken();
-            StaticArrayDimension = NextTypeToken.IntegerValue;
+            CallingConvention = NextTypeToken.CallingConvention;
+            NextTypeToken = PeekNextToken();
+            // If we found a calling convention, this is not a reference to array
+            bIsPotentiallyPointerOrReferenceToArray = false;
+        }
+
+        // And also potentially consume const modifier
+        if ( NextTypeToken.Type == ETypeTextToken::TypeModifier && NextTypeToken.TypeModifier == ETypeModifier::Const && !bIsFunctionTypeConst )
+        {
+            ConsumeNextToken();
+            bIsFunctionTypeConst = true;
             NextTypeToken = PeekNextToken();
         }
 
-        // Last token we parse should be a closing bracket of the array
-        if ( NextTypeToken.Type != ETypeTextToken::ArrayRBracket )
+        // Next token should be a closing bracket for pointer declaration
+        if ( NextTypeToken.Type != ETypeTextToken::RBracket )
         {
-            assert(!L"Expected ] following the array size declaration, got another token");
+            assert(!L"Expected ) closing the function pointer declaration, got another token");
             return nullptr;
         }
         ConsumeNextToken();
         NextTypeToken = PeekNextToken();
 
-        const std::shared_ptr<ArrayTypeDeclaration> ArrayType = std::make_shared<ArrayTypeDeclaration>();
-        ArrayType->ElementType = ReturnType;
-        ArrayType->ArrayDimension = StaticArrayDimension;
+        // Check if this is actually a pointer/reference to array declaration. In that case, next symbol would be an array left bracket, followed by optional dimension and closing bracket
+        // After that, we consider the type declaration complete, and nothing past it is parsed
+        if ( NextTypeToken.Type == ETypeTextToken::ArrayLBracket && bIsPotentiallyPointerOrReferenceToArray )
+        {
+            ConsumeNextToken();
+            NextTypeToken = PeekNextToken();
 
-        const std::shared_ptr<PointerTypeDeclaration> PointerType = std::make_shared<PointerTypeDeclaration>();
-        PointerType->PointeeType = ArrayType;
-        PointerType->bIsConst = bIsFunctionTypeConst;
-        PointerType->bIsReference = bParsedReferenceInsteadOfPointer;
-        return PointerType;
-    }
+            // Potentially digest the static array dimensions
+            std::optional<int32_t> StaticArrayDimension;
+            if ( NextTypeToken.Type == ETypeTextToken::Integer )
+            {
+                ConsumeNextToken();
+                StaticArrayDimension = NextTypeToken.IntegerValue;
+                NextTypeToken = PeekNextToken();
+            }
 
-    // Next should be an opening bracket for the argument list
-    if ( NextTypeToken.Type != ETypeTextToken::LBracket )
-    {
-        assert(!L"Expected ( preceding the function pointer argument list declaration, got another token");
-        return nullptr;
-    }
-    ConsumeNextToken();
-    NextTypeToken = PeekNextToken();
+            // Last token we parse should be a closing bracket of the array
+            if ( NextTypeToken.Type != ETypeTextToken::ArrayRBracket )
+            {
+                assert(!L"Expected ] following the array size declaration, got another token");
+                return nullptr;
+            }
+            ConsumeNextToken();
+            NextTypeToken = PeekNextToken();
 
-    // Make sure we did not parse a reference instead of a pointer, now that we know this is a function pointer declaration and not a reference to array
-    if ( bParsedReferenceInsteadOfPointer )
-    {
-        assert(!L"Expected * when parsing function pointer declaration, but got & instead");
-        return nullptr;
+            const std::shared_ptr<ArrayTypeDeclaration> ArrayType = std::make_shared<ArrayTypeDeclaration>();
+            ArrayType->ElementType = ReturnType;
+            ArrayType->ArrayDimension = StaticArrayDimension;
+
+            const std::shared_ptr<PointerTypeDeclaration> PointerType = std::make_shared<PointerTypeDeclaration>();
+            PointerType->PointeeType = ArrayType;
+            PointerType->bIsConst = bIsFunctionTypeConst;
+            PointerType->bIsReference = bParsedReferenceInsteadOfPointer;
+            return PointerType;
+        }
+
+        // Next should be an opening bracket for the argument list
+        if ( NextTypeToken.Type != ETypeTextToken::LBracket )
+        {
+            assert(!L"Expected ( preceding the function pointer argument list declaration, got another token");
+            return nullptr;
+        }
+
+        ConsumeNextToken();
+        NextTypeToken = PeekNextToken();
+
+        // Make sure we did not parse a reference instead of a pointer, now that we know this is a function pointer declaration and not a reference to array
+        if ( bParsedReferenceInsteadOfPointer )
+        {
+            assert(!L"Expected * when parsing function pointer declaration, but got & instead");
+            return nullptr;
+        }
     }
 
     // Parse function argument list
@@ -1404,7 +1485,7 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParseFunctionPointerDecl
     const std::shared_ptr<FunctionTypeDeclaration> FunctionType = std::make_shared<FunctionTypeDeclaration>();
     FunctionType->Arguments = FunctionArguments;
     FunctionType->ReturnType = ReturnType;
-    FunctionType->bIsFunctionPointer = true;
+    FunctionType->bIsFunctionPointer = bIsFunctionPointerType;
     FunctionType->OwnerType = OuterTypeIdentifier;
     FunctionType->bIsConstMemberFunction = bIsConstMemberFunction;
     FunctionType->bIsVariadicArguments = bIsVariadicArguments;

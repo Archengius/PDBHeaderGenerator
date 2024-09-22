@@ -213,7 +213,12 @@ void TypeDependencyCollectorBase::CollectDependenciesForTemplateInstantiation( c
         const std::shared_ptr<ITypeDeclaration> Decl = DeclarationsToCheck[i];
         if ( Decl->GetId() == ETypeDeclarationId::PointerType )
         {
-            DeclarationsToCheck.push_back( static_cast<const PointerTypeDeclaration*>( Decl.get() )->PointeeType );
+            const PointerTypeDeclaration* PointerType = static_cast<const PointerTypeDeclaration*>( Decl.get() );
+            DeclarationsToCheck.push_back( PointerType->PointeeType );
+            if ( PointerType->OwnerType )
+            {
+                DeclarationsToCheck.push_back( PointerType->OwnerType );
+            }
         }
         else if ( Decl->GetId() == ETypeDeclarationId::ArrayType )
         {
