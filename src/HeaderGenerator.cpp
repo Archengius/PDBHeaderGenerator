@@ -1406,6 +1406,11 @@ std::shared_ptr<CompilationUnit> HeaderGenerator::CreateCompilationUnitForCompil
 
             return std::make_shared<CompilationUnit>( this, CompilandSymbol, CombinedCompilationUnitName, false );
         }
+        if ( !AlreadyPrintedLibraryNames.contains(LibraryName) )
+        {
+            AlreadyPrintedLibraryNames.insert(LibraryName);
+            std::wcout << L"Marking library as external: " << LibraryName << std::endl;
+        }
 
         // If symbol name ends with .dll, that means this lib is linking against a DLL. Otherwise, it's linking agaisnt an static library
         // DLLs will get two compilands: one with symbol name matching the DLL name and the other matching the DLL name + Import: prefix
@@ -1422,7 +1427,6 @@ std::shared_ptr<CompilationUnit> HeaderGenerator::CreateCompilationUnitForCompil
         // Create proxy object for this statically linked library to collect types that the library uses
         if ( SymbolName.ends_with(L".obj") )
         {
-            assert(SymbolName.find(L"Unity") == std::wstring::npos);
             return std::make_shared<CompilationUnit>( this, CompilandSymbol, SymbolName, true );
         }
         return nullptr;
