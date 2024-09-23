@@ -1,6 +1,7 @@
 #include "TypeDependencyCollector.h"
 #include <iostream>
 #include <ranges>
+#include <Utils/TextWriter.h>
 
 TypeDependency::TypeDependency(const CComPtr<IDiaSymbol>& InDependencySymbol) : DependencySymbol(InDependencySymbol)
 {
@@ -323,10 +324,19 @@ void TypeDependencyCollectorBase::CollectDependenciesForTemplateInstantiation( c
             // Use slow path using the iteration across all template instantiations in the database in case this is our own type.
             const CComPtr<IDiaSymbol> InstantiationSymbol = TypeResolver->ResolveTemplateInstantiation( SymbolNameInfo, TypeDeclaration->TemplateArguments );
 
-            assert( InstantiationSymbol && L"Failed to resolve template instantiation used as a template argument for non-external type." );
+
+            assert( InstantiationSymbol && L"Failed to resolve template instantiation used as a template argument for non-external type" );
             if ( InstantiationSymbol )
             {
                 AddDependency( TypeDependency::UserDefinedType( InstantiationSymbol ), !bTemplateNeedsFullType );
+            }
+            else
+            {
+                FormattedTextWriter TemplateArgumentsText;
+                TypeDeclaration->TemplateArguments.Print(TemplateArgumentsText, TypeFormattingRules());
+
+                // This a pretty serious error that will result in a compilation error, but it is normal for some template types in some cases (e.g. non-type arguments only templates) to be absent
+                std::wcerr << L"Failed to resolve template instantiation used as a template argument for non-external type " << SymbolNameInfo.ToString() << L". Template Arguments: " << TemplateArgumentsText.ToString() << std::endl;
             }
         }
     }
