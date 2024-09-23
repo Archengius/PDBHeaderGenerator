@@ -2167,13 +2167,19 @@ int32_t FTypeTextParseHelper::PeekNextTokenInternal(int32_t CurrentOffset, TypeT
     }
     // This is an escaped identifier. We parse it until we encounter ', which is used as a closing delimiter for it
     // Escaped identifiers are only emitted by the compiler internals and are not a valid C++ syntax
+    // NOTE: These can be nested apparently, at least on MSVC
     if ( CurrentCharacter == L'`' )
     {
         int32_t StartOffset = CurrentOffset;
-        while ( CurrentOffset < RawText.size() && RawText[CurrentOffset] != L'\'' )
+        int32_t CurrentNestingDepth = 0;
+        while ( CurrentOffset < RawText.size() && (RawText[CurrentOffset] != L'\'' || CurrentNestingDepth != 0) )
         {
+            // Handle nested internal identifiers
+            if (RawText[CurrentOffset] == L'`') CurrentNestingDepth++;
+            else if (RawText[CurrentOffset] == L'\'') CurrentNestingDepth--;
             CurrentOffset++;
         }
+        assert(CurrentNestingDepth == 0 && L"Unbalanced escaped identifier parsed from token stream");
         CurrentOffset++;
         OutToken.Type = ETypeTextToken::Identifier;
         OutToken.Identifier = std::wstring_view( &RawText[StartOffset], CurrentOffset - StartOffset );
