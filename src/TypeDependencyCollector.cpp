@@ -322,11 +322,7 @@ void TypeDependencyCollectorBase::CollectDependenciesForTemplateInstantiation( c
             }
 
             // Use slow path using the iteration across all template instantiations in the database in case this is our own type.
-            const CComPtr<IDiaSymbol> InstantiationSymbol = TypeResolver->ResolveTemplateInstantiation( SymbolNameInfo, TypeDeclaration->TemplateArguments );
-
-
-            assert( InstantiationSymbol && L"Failed to resolve template instantiation used as a template argument for non-external type" );
-            if ( InstantiationSymbol )
+            if ( const CComPtr<IDiaSymbol> InstantiationSymbol = TypeResolver->ResolveTemplateInstantiation( SymbolNameInfo, TypeDeclaration->TemplateArguments ) )
             {
                 AddDependency( TypeDependency::UserDefinedType( InstantiationSymbol ), !bTemplateNeedsFullType );
             }
