@@ -168,6 +168,11 @@ size_t FundamentalTypeDeclaration::GetDeclarationHash() const
 void VoidTypeDeclaration::Print(FormattedTextWriter& TextWriter, const TypeFormattingRules& Rules) const
 {
     TextWriter.Append(L"void");
+    if (bIsConst)
+    {
+        TextWriter.Append(L" ");
+        TextWriter.Append(L" const");
+    }
 }
 
 bool VoidTypeDeclaration::Identical(const std::shared_ptr<ITypeDeclaration>& InOtherDeclaration) const
@@ -192,7 +197,9 @@ bool operator==(const TypeTemplateArgument& A, const TypeTemplateArgument& B)
     {
         case ETemplateArgumentType::IntegerConst: return A.IntegerConstant == B.IntegerConstant;
         case ETemplateArgumentType::TypeDeclaration: return ITypeDeclaration::StaticIdentical(A.TypeConstant, B.TypeConstant);
-        case ETemplateArgumentType::IntegerWildcard: return A.IntegerWildcardIndex == B.IntegerWildcardIndex;
+        case ETemplateArgumentType::TypeMemberReference: return A.TypeMemberReference == B.TypeMemberReference;
+        case ETemplateArgumentType::IntegerWildcard: return A.WildcardIndex == B.WildcardIndex;
+        case ETemplateArgumentType::TypeMemberReferenceWildcard: return A.WildcardIndex == B.WildcardIndex;
         default: assert(!L"Failed to compare unknown type template argument type"); return false;
     }
 }
@@ -207,9 +214,17 @@ bool TypeTemplateArgument::Match(const TypeTemplateArgument& InMatchAgainst, Typ
     {
         return ITypeDeclaration::StaticMatch( TypeConstant, InMatchAgainst.TypeConstant, MatchContext );
     }
+    if (Type == ETemplateArgumentType::TypeMemberReference && InMatchAgainst.Type == ETemplateArgumentType::TypeMemberReference)
+    {
+        return TypeMemberReference == InMatchAgainst.TypeMemberReference;
+    }
     if (Type == ETemplateArgumentType::IntegerWildcard && InMatchAgainst.Type == ETemplateArgumentType::IntegerConst)
     {
-        return MatchContext.MatchIntegerWildcard( IntegerWildcardIndex, InMatchAgainst.IntegerConstant );
+        return MatchContext.MatchIntegerWildcard( WildcardIndex, InMatchAgainst.IntegerConstant );
+    }
+    if (Type == ETemplateArgumentType::TypeMemberReferenceWildcard && InMatchAgainst.Type == ETemplateArgumentType::TypeMemberReference)
+    {
+        return MatchContext.MatchTypeMemberReferenceWildcard( WildcardIndex, InMatchAgainst.TypeMemberReference );
     }
     return false;
 }
@@ -224,9 +239,17 @@ void TypeTemplateArgument::Print(FormattedTextWriter& TextWriter, const TypeForm
     {
         TypeConstant->Print(TextWriter, Rules);
     }
+    else if (Type == ETemplateArgumentType::TypeMemberReference)
+    {
+        TypeMemberReference.Print(TextWriter, Rules);
+    }
     else if (Type == ETemplateArgumentType::IntegerWildcard)
     {
-        TextWriter.AppendFormat(L"??%d", IntegerWildcardIndex);
+        TextWriter.AppendFormat(L"??%d", WildcardIndex);
+    }
+    else if (Type == ETemplateArgumentType::TypeMemberReferenceWildcard)
+    {
+        TextWriter.AppendFormat(L"?&%d", WildcardIndex);
     }
     else
     {
@@ -250,11 +273,25 @@ TypeTemplateArgument TypeTemplateArgument::Substitute(const TypeDeclarationMatch
         Argument.TypeConstant = ITypeDeclaration::StaticSubstitute( TypeConstant, MatchContext );
         return Argument;
     }
+    if (Type == ETemplateArgumentType::TypeMemberReference)
+    {
+        TypeTemplateArgument Argument;
+        Argument.Type = ETemplateArgumentType::TypeMemberReference;
+        Argument.TypeMemberReference = TypeMemberReference.Substitute( MatchContext );
+        return Argument;
+    }
     if (Type == ETemplateArgumentType::IntegerWildcard)
     {
         TypeTemplateArgument Argument;
         Argument.Type = ETemplateArgumentType::IntegerConst;
-        Argument.IntegerConstant = MatchContext.SubstituteIntegerWildcard( IntegerWildcardIndex );
+        Argument.IntegerConstant = MatchContext.SubstituteIntegerWildcard( WildcardIndex );
+        return Argument;
+    }
+    if (Type == ETemplateArgumentType::TypeMemberReferenceWildcard)
+    {
+        TypeTemplateArgument Argument;
+        Argument.Type = ETemplateArgumentType::TypeMemberReference;
+        Argument.TypeMemberReference = MatchContext.SubstituteTypeMemberReferenceWildcard( WildcardIndex );
         return Argument;
     }
 
@@ -266,9 +303,13 @@ TypeTemplateArgument TypeTemplateArgument::Substitute(const TypeDeclarationMatch
 TypeTemplateArgument TypeTemplateArgument::Clone() const
 {
     TypeTemplateArgument ClonedArgument = *this;
-    if ( ClonedArgument.Type == ETemplateArgumentType::TypeDeclaration && ClonedArgument.TypeConstant )
+    if ( ClonedArgument.Type == ETemplateArgumentType::TypeDeclaration && TypeConstant )
     {
-        ClonedArgument.TypeConstant = ClonedArgument.TypeConstant->Clone();
+        ClonedArgument.TypeConstant = TypeConstant->Clone();
+    }
+    if ( ClonedArgument.Type == ETemplateArgumentType::TypeMemberReference )
+    {
+        ClonedArgument.TypeMemberReference = TypeMemberReference.Clone();
     }
     return ClonedArgument;
 }
@@ -278,8 +319,10 @@ size_t TypeTemplateArgument::GetTemplateArgumentHash() const
     switch (Type)
     {
         case ETemplateArgumentType::IntegerConst: return std::hash<int64_t>()( IntegerConstant );
-        case ETemplateArgumentType::TypeDeclaration: ITypeDeclaration::StaticGetDeclarationHash( TypeConstant );
-        case ETemplateArgumentType::IntegerWildcard: return std::hash<int64_t>()( IntegerWildcardIndex );
+        case ETemplateArgumentType::TypeDeclaration: return ITypeDeclaration::StaticGetDeclarationHash( TypeConstant );
+        case ETemplateArgumentType::TypeMemberReference: return TypeMemberReference.GetTypeMemberReferenceHash();
+        case ETemplateArgumentType::IntegerWildcard: return std::hash<int64_t>()( WildcardIndex );
+        case ETemplateArgumentType::TypeMemberReferenceWildcard: return std::hash<int64_t>()( WildcardIndex );
         default: assert(!L"Unknown type template argument type"); return 0;
     }
 }
@@ -994,6 +1037,58 @@ int64_t TypeDeclarationMatchContext::SubstituteIntegerWildcard(const int32_t InW
     return IntegerWildcardMatches.find( InWildcardIndex )->second;
 }
 
+TypeMemberReference TypeDeclarationMatchContext::SubstituteTypeMemberReferenceWildcard(int32_t InWildcardIndex) const
+{
+    return TypeMemberReferenceWildcardMatches.find( InWildcardIndex )->second;
+}
+
+bool operator==(const TypeMemberReference& A, const TypeMemberReference& B)
+{
+    return ITypeDeclaration::StaticIdentical(A.OwnerType, B.OwnerType) && A.MemberName == B.MemberName;
+}
+
+bool TypeMemberReference::Match(const TypeMemberReference& InMatchAgainst, TypeDeclarationMatchContext& MatchContext) const
+{
+    // Allow partial matching of owner types with wildcards, but member names have to fully match
+    return ITypeDeclaration::StaticMatch(OwnerType, InMatchAgainst.OwnerType, MatchContext) && MemberName == InMatchAgainst.MemberName;
+}
+
+void TypeMemberReference::Print(FormattedTextWriter& TextWriter, const TypeFormattingRules& Rules) const
+{
+    if (OwnerType)
+    {
+        OwnerType->Print(TextWriter, Rules);
+    }
+    TextWriter.Append(L"::");
+    TextWriter.Append(MemberName);
+}
+
+TypeMemberReference TypeMemberReference::Substitute(const TypeDeclarationMatchContext& MatchContext) const
+{
+    // Allow partial matching of owner types with wildcards, but member names have to fully match
+    TypeMemberReference NewMemberReference;
+    NewMemberReference.OwnerType = ITypeDeclaration::StaticSubstitute(OwnerType, MatchContext);
+    NewMemberReference.MemberName = MemberName;
+
+    return NewMemberReference;
+}
+
+TypeMemberReference TypeMemberReference::Clone() const
+{
+    TypeMemberReference NewMemberReference;
+    NewMemberReference.OwnerType = OwnerType ? OwnerType->Clone() : nullptr;
+    NewMemberReference.MemberName = MemberName;
+
+    return NewMemberReference;
+}
+
+size_t TypeMemberReference::GetTypeMemberReferenceHash() const
+{
+    size_t MemberReferenceHash = ITypeDeclaration::StaticGetDeclarationHash(OwnerType);
+    HashCombine(MemberReferenceHash, MemberName);
+    return MemberReferenceHash;
+}
+
 bool ITypeDeclaration::StaticIdentical(const std::shared_ptr<ITypeDeclaration>& A, const std::shared_ptr<ITypeDeclaration>& B)
 {
     return A == B || ( A != nullptr && B != nullptr && A->GetId() == B->GetId() && A->Identical(B) );
@@ -1033,6 +1128,16 @@ bool TypeDeclarationMatchContext::MatchIntegerWildcard(int32_t InWildcardIndex, 
     return true;
 }
 
+bool TypeDeclarationMatchContext::MatchTypeMemberReferenceWildcard(int32_t InWildcardIndex, const TypeMemberReference& InTypeMemberReference)
+{
+    if ( const auto Iterator = TypeMemberReferenceWildcardMatches.find(InWildcardIndex); Iterator != TypeMemberReferenceWildcardMatches.end() )
+    {
+        return InTypeMemberReference == Iterator->second;
+    }
+    TypeMemberReferenceWildcardMatches.insert({ InWildcardIndex, InTypeMemberReference });
+    return true;
+}
+
 bool ITypeDeclaration::Match(const std::shared_ptr<ITypeDeclaration>& InMatchAgainst, TypeDeclarationMatchContext& MatchContext) const
 {
     // By default, match matches the behavior of Identical
@@ -1062,7 +1167,7 @@ bool FTypeTextParseHelper::ParseTemplateArgumentsInternal( std::vector<TypeTempl
     while (true)
     {
         // Stop parsing template arguments if it's end of line or is a template bracket
-        const TypeTextToken CurrentToken = PeekNextToken();
+        TypeTextToken CurrentToken = PeekNextToken();
         if ( CurrentToken.Type == ETypeTextToken::EndOfLine || CurrentToken.Type == ETypeTextToken::TemplateRBracket )
         {
             return true;
@@ -1099,14 +1204,30 @@ bool FTypeTextParseHelper::ParseTemplateArgumentsInternal( std::vector<TypeTempl
 
             TypeTemplateArgument TemplateArgument;
             TemplateArgument.Type = ETemplateArgumentType::IntegerWildcard;
-            TemplateArgument.IntegerWildcardIndex = ArgumentFirstToken.WildcardIndex;
+            TemplateArgument.WildcardIndex = ArgumentFirstToken.WildcardIndex;
             OutTemplateArguments.push_back(TemplateArgument);
         }
-        // Check for reference, that would parse as a member function pointer
+        // Check for type member reference wildcard, if we are allowed to parse wildcards
+        else if ( ArgumentFirstToken.Type == ETypeTextToken::TypeMemberReferenceWildcard && bAllowWildcards )
+        {
+            ConsumeNextToken();
+
+            TypeTemplateArgument TemplateArgument;
+            TemplateArgument.Type = ETemplateArgumentType::TypeMemberReferenceWildcard;
+            TemplateArgument.WildcardIndex = ArgumentFirstToken.WildcardIndex;
+            OutTemplateArguments.push_back(TemplateArgument);
+        }
+        // Check for reference, that would parse as a function/data pointer
         else if ( ArgumentFirstToken.Type == ETypeTextToken::Reference )
         {
-            assert(!L"Data/function pointer as a template instantiation argument is not supported (yet). If you assert here, please poke me to add parsing of these");
-            return false;
+            ConsumeNextToken();
+
+            const TypeMemberReference TypeMemberReference = ParseTypeMemberReference();
+
+            TypeTemplateArgument TemplateArgument;
+            TemplateArgument.Type = ETemplateArgumentType::TypeMemberReference;
+            TemplateArgument.TypeMemberReference = TypeMemberReference;
+            OutTemplateArguments.push_back(TemplateArgument);
         }
         // This must be a type declaration otherwise
         else
@@ -1125,6 +1246,100 @@ bool FTypeTextParseHelper::ParseTemplateArgumentsInternal( std::vector<TypeTempl
             OutTemplateArguments.push_back(TemplateArgument);
         }
     }
+}
+
+TypeMemberReference FTypeTextParseHelper::ParseTypeMemberReference()
+{
+    // A more narrow subset of C++ syntax is allowed here compared to ParseSimpleTypeDeclaration. For example,
+    // no CSU specifiers are allowed, and no base types are allowed at any point. It must be a sequence of identifiers, potentially with template arguments
+    TypeTextToken CurrentToken = PeekNextToken();
+
+    std::shared_ptr<UDTTypeDeclaration> CurrentOuterType = nullptr;
+    std::vector<std::wstring_view> NamespaceTypeNameAndMemberNameSegments;
+
+    // Parses currently buffered segment tokens into the current outer type
+    const auto ParseBufferedSegmentsIntoTypeDeclarations = [&](const TypeTemplateArgumentContainer& TemplateArguments, const int32_t EndOffset = 0)
+    {
+        assert(!NamespaceTypeNameAndMemberNameSegments.empty() && L"Expected identifier when parsing member/data pointer, got nothing");
+
+        // This is the first type we are parsing, assume all parts before the last token are namespace, and last token is the type name
+        if ( CurrentOuterType == nullptr )
+        {
+            CurrentOuterType = std::make_shared<UDTTypeDeclaration>();
+            const std::span NamespaceSpan{NamespaceTypeNameAndMemberNameSegments.data(), NamespaceTypeNameAndMemberNameSegments.size() - EndOffset - 1};
+
+            // Initialize first chunk as the namespace and last segment as the class name, and append arguments
+            CurrentOuterType->OuterScope = JoinToString(NamespaceSpan, L"::");
+            CurrentOuterType->ClassName = NamespaceTypeNameAndMemberNameSegments[NamespaceTypeNameAndMemberNameSegments.size() - EndOffset - 1];
+            CurrentOuterType->TemplateArguments = TemplateArguments;
+        }
+        // This is a nested type. That implies that each segment represents a nested type, and never a namespace
+        else
+        {
+            for ( int32_t i = 0; i < NamespaceTypeNameAndMemberNameSegments.size() - EndOffset; i++ )
+            {
+                const std::shared_ptr<UDTTypeDeclaration> NewNestedType = std::make_shared<UDTTypeDeclaration>();
+
+                NewNestedType->OuterType = CurrentOuterType;
+                NewNestedType->ClassName = NamespaceTypeNameAndMemberNameSegments[i];
+                NewNestedType->TemplateArguments = TemplateArguments;
+                CurrentOuterType = NewNestedType;
+            }
+        }
+        NamespaceTypeNameAndMemberNameSegments.erase(NamespaceTypeNameAndMemberNameSegments.begin(), NamespaceTypeNameAndMemberNameSegments.end() - EndOffset);
+    };
+
+    // Consume identifiers until we run out of them
+    while ( CurrentToken.Type == ETypeTextToken::Identifier )
+    {
+        // Consume the current identifier token
+        NamespaceTypeNameAndMemberNameSegments.push_back(CurrentToken.Identifier);
+        ConsumeNextToken();
+        CurrentToken = PeekNextToken();
+
+        // If we have parsed a template opening bracket, consume it, parse template arguments and consume closing bracket
+        if ( CurrentToken.Type == ETypeTextToken::TemplateLBracket )
+        {
+            ConsumeNextToken();
+            TypeTemplateArgumentContainer TemplateArguments;
+            const bool bParsedTemplateArguments = ParseTemplateArgumentsInternal(TemplateArguments.Arguments);
+
+            assert(bParsedTemplateArguments && L"Failed to parse template arguments when parsing member/data pointer");
+
+            CurrentToken = PeekNextToken();
+            assert(CurrentToken.Type == ETypeTextToken::TemplateRBracket && L"Expected > when parsing member/data pointer, got another token");
+            ConsumeNextToken();
+
+            // Form a type name from the already assembled tokens
+            ParseBufferedSegmentsIntoTypeDeclarations(TemplateArguments, 0);
+            CurrentToken = PeekNextToken();
+        }
+
+        // If this is not a scope delimiter, break out of the loop
+        if ( CurrentToken.Type != ETypeTextToken::ScopeDelimiter )
+        {
+            break;
+        }
+        ConsumeNextToken();
+        CurrentToken = PeekNextToken();
+    }
+
+    // If there are any additional tokens buffered, consume them to make a new type (but leave the last token)
+    if ( NamespaceTypeNameAndMemberNameSegments.size() > 1 )
+    {
+        ParseBufferedSegmentsIntoTypeDeclarations(TypeTemplateArgumentContainer{}, 1);
+    }
+
+    // Make sure we have a valid outer type now and one token for the member name
+    assert(CurrentOuterType != nullptr && L"Expected typename preceding member name when parsing member/data pointer");
+    assert(NamespaceTypeNameAndMemberNameSegments.size() == 1 && L"Expected member name when parsing member/data pointer");
+    const std::wstring_view MemberName = NamespaceTypeNameAndMemberNameSegments[0];
+
+    TypeMemberReference ResultMemberReference;
+    ResultMemberReference.OwnerType = CurrentOuterType;
+    ResultMemberReference.MemberName = MemberName;
+
+    return ResultMemberReference;
 }
 
 std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParseCompleteTypeDeclaration()
@@ -1603,7 +1818,7 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParsePartialSimpleDeclar
         }
         if ( InternalTypeToken.has_value() )
         {
-            assert(!L"Enocuntered template instantiation after an internal type. Internal types cannot be templated.");
+            assert(!L"Encountered template instantiation after an internal type. Internal types cannot be templated.");
             return nullptr;
         }
         ConsumeNextToken();
@@ -1710,12 +1925,6 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParsePartialSimpleDeclar
         assert(!L"Fundamental types cannot be nested inside of the user defined types");
         return nullptr;
     }
-    // Make sure void type does not have any type modifiers
-    if ( bIsVoidType && !AppliedTypeModifiers.empty() )
-    {
-        assert(!L"Void type cannot have any type modifiers (including 'const')");
-        return nullptr;
-    }
     if ( WildcardTypeToken.has_value() && ( !AppliedTypeModifiers.empty() && !(AppliedTypeModifiers.size() == 1 && AppliedTypeModifiers[0] == ETypeModifier::Const) || CSUSpecifier.has_value() || OuterType != nullptr ) )
     {
         assert(!L"Type wildcards cannot have type modifiers (except for const), CSU specifier or outer type declaration");
@@ -1726,7 +1935,9 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParsePartialSimpleDeclar
     // Construct the void type
     if ( bIsVoidType )
     {
-        return std::make_shared<VoidTypeDeclaration>();
+        const std::shared_ptr<VoidTypeDeclaration> VoidTypeDecl = std::make_shared<VoidTypeDeclaration>();
+        VoidTypeDecl->bIsConst = bIsConst;
+        return VoidTypeDecl;
     }
     // Construct the fundamental type. Const is handled as a type modifier here and not as a separate thing
     if ( FundamentalType.has_value() )
@@ -2136,11 +2347,11 @@ int32_t FTypeTextParseHelper::PeekNextTokenInternal(int32_t CurrentOffset, TypeT
     }
     // Match for type/integer wildcard. This is an invalid syntax in C++, even for compiler generated members
     if ( CurrentCharacter == L'?' && CurrentOffset + 1 < RawText.size() && ( iswdigit(RawText[CurrentOffset + 1]) || (
-        RawText[CurrentOffset + 1] == L'?' && CurrentOffset + 2 < RawText.size() && iswdigit(RawText[CurrentOffset + 2]) ) ) )
+        (RawText[CurrentOffset + 1] == L'?' || RawText[CurrentOffset + 1] == L'&') && CurrentOffset + 2 < RawText.size() && iswdigit(RawText[CurrentOffset + 2]) ) ) )
     {
         // Parse digits until we find non-digit token
-        bool bIsIntegerWildcard = RawText[CurrentOffset + 1] == L'?';
-        CurrentOffset += bIsIntegerWildcard ? 2 : 1;
+        const bool bIsLongWildcard = RawText[CurrentOffset + 1] == L'?' || RawText[CurrentOffset + 1] == L'&';
+        CurrentOffset += bIsLongWildcard ? 2 : 1;
         const int32_t StartOffset = CurrentOffset++;
         while ( CurrentOffset < RawText.size() && iswdigit(RawText[CurrentOffset]) )
         {
@@ -2149,7 +2360,9 @@ int32_t FTypeTextParseHelper::PeekNextTokenInternal(int32_t CurrentOffset, TypeT
         const int32_t EndOffset = CurrentOffset;
         const std::wstring StringCopy( &RawText[StartOffset], EndOffset - StartOffset );
 
-        OutToken.Type = bIsIntegerWildcard ? ETypeTextToken::IntegerWildcard : ETypeTextToken::TypeWildcard;
+        const bool bIsIntegerWildcard = bIsLongWildcard && RawText[CurrentOffset + 1] == L'?';
+        const bool bIsTypeMemberReferenceWildcard = bIsLongWildcard && RawText[CurrentOffset + 1] == L'&';
+        OutToken.Type = bIsIntegerWildcard ? ETypeTextToken::IntegerWildcard : (bIsTypeMemberReferenceWildcard ? ETypeTextToken::TypeMemberReferenceWildcard : ETypeTextToken::TypeWildcard);
         OutToken.WildcardIndex = _wtoi( StringCopy.c_str() );
         return CurrentOffset;
     }

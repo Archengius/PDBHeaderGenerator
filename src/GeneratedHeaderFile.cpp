@@ -585,6 +585,16 @@ std::shared_ptr<ITopLevelDeclaration> GeneratedHeaderFile::MakeTemplateDeclarati
         {
             DeclarationArgument.Type = ETemplateDeclarationArgumentType::Typename;
         }
+        else if ( Argument.Type == ETemplateArgumentType::TypeMemberReference )
+        {
+            DeclarationArgument.Type = ETemplateDeclarationArgumentType::TypeValue;
+
+            // TODO: We do not have enough information to infer the type of the underlying template. void* will work on MSVC, since function pointers can be implicitly casted to void*,
+            // but will most likely not work on other platforms for member function pointer types and member pointer types
+            const std::shared_ptr<PointerTypeDeclaration> TypeKind = std::make_shared<PointerTypeDeclaration>();
+            TypeKind->PointeeType = std::make_shared<VoidTypeDeclaration>();
+            DeclarationArgument.TypeValueKind = TypeKind;
+        }
         else if ( Argument.Type == ETemplateArgumentType::IntegerConst )
         {
             DeclarationArgument.Type = ETemplateDeclarationArgumentType::TypeValue;

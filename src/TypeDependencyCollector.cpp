@@ -204,6 +204,10 @@ void TypeDependencyCollectorBase::CollectDependenciesForTemplateInstantiation( c
         {
             DeclarationsToCheck.push_back(Argument.TypeConstant);
         }
+        if ( Argument.Type == ETemplateArgumentType::TypeMemberReference )
+        {
+            DeclarationsToCheck.push_back(Argument.TypeMemberReference.OwnerType);
+        }
     }
 
     std::vector<const EnumTypeDeclaration*> TopLevelEnums;

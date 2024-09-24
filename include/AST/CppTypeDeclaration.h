@@ -177,17 +177,34 @@ enum class ETypeDeclarationId : uint32_t
 };
 
 class ITypeDeclaration;
+struct TypeMemberReference;
 
 class TypeDeclarationMatchContext
 {
     std::unordered_map<int32_t, std::shared_ptr<ITypeDeclaration>> WildcardMatches;
     std::unordered_map<int32_t, int64_t> IntegerWildcardMatches;
+    std::unordered_map<int32_t, TypeMemberReference> TypeMemberReferenceWildcardMatches;
 public:
     bool MatchWildcard( int32_t InWildcardIndex, bool bIsWildcardConst, const std::shared_ptr<ITypeDeclaration>& InMatchAgainst );
     bool MatchIntegerWildcard( int32_t InWildcardIndex, int64_t InIntegerConstant );
+    bool MatchTypeMemberReferenceWildcard( int32_t InWildcardIndex, const TypeMemberReference& InTypeMemberReference );
 
     std::shared_ptr<ITypeDeclaration> SubstituteWildcard( int32_t InWildcardIndex, bool bIsWildcardConst ) const;
     int64_t SubstituteIntegerWildcard( int32_t InWildcardIndex ) const;
+    TypeMemberReference SubstituteTypeMemberReferenceWildcard( int32_t InWildcardIndex ) const;
+};
+
+struct TypeMemberReference
+{
+    std::shared_ptr<ITypeDeclaration> OwnerType;
+    std::wstring MemberName;
+
+    friend bool operator==(const TypeMemberReference& A, const TypeMemberReference& B);
+    bool Match(const TypeMemberReference& InMatchAgainst, TypeDeclarationMatchContext& MatchContext) const;
+    void Print(FormattedTextWriter& TextWriter, const TypeFormattingRules& Rules) const;
+    TypeMemberReference Substitute(const TypeDeclarationMatchContext& MatchContext) const;
+    TypeMemberReference Clone() const;
+    size_t GetTypeMemberReferenceHash() const;
 };
 
 class ITypeDeclaration : public std::enable_shared_from_this<ITypeDeclaration>
@@ -318,7 +335,9 @@ enum class ETemplateArgumentType : uint8_t
     None,
     IntegerConst,
     TypeDeclaration,
+    TypeMemberReference,
     IntegerWildcard,
+    TypeMemberReferenceWildcard,
 };
 
 struct TypeTemplateArgument
@@ -326,7 +345,8 @@ struct TypeTemplateArgument
     ETemplateArgumentType Type{ETemplateArgumentType::None};
     int64_t IntegerConstant{0};
     std::shared_ptr<ITypeDeclaration> TypeConstant;
-    int32_t IntegerWildcardIndex{0};
+    TypeMemberReference TypeMemberReference;
+    int32_t WildcardIndex{0};
 
     friend bool operator==(const TypeTemplateArgument& A, const TypeTemplateArgument& B);
     bool Match(const TypeTemplateArgument& InMatchAgainst, TypeDeclarationMatchContext& MatchContext) const;
@@ -490,6 +510,7 @@ enum class ETypeTextToken : uint8_t
     // Extension syntax to the normal token set for partial template specialization matching
     TypeWildcard,
     IntegerWildcard,
+    TypeMemberReferenceWildcard,
     Invalid
 };
 
@@ -538,6 +559,8 @@ private:
     std::shared_ptr<ITypeDeclaration> ParsePartialSimpleDeclarationPartial( const std::shared_ptr<ITypeDeclaration>& OuterType, std::vector<ETypeModifier> AppliedTypeModifiers, bool bHasEnumSpecifier, bool bIsEnumClass, const std::optional<CppUDTKind>& CSUSpecifier );
     // This does not consume the first LBracket, you are expected to do it yourself
     std::shared_ptr<ITypeDeclaration> ParseFunctionPointerDeclaration( const std::shared_ptr<ITypeDeclaration>& ReturnType );
+    // Parses type member name. Uses a simplified set of rules that are used for simple type declarations, and does not permit CSU or global namespaces
+    TypeMemberReference ParseTypeMemberReference();
 public:
     // Parses a complete type declaration
     std::shared_ptr<ITypeDeclaration> ParseCompleteTypeDeclaration();
