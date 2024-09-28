@@ -1770,6 +1770,12 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParsePartialSimpleDeclar
         assert(!L"Expected identifier for type name, got different token");
         return nullptr;
     }
+    // Check if the next token is a scope separator followed by the internal type. In that case, it's an internal type inside the specific scope
+    else if ( PeekNextToken().Type == ETypeTextToken::ScopeDelimiter && PeekNextNextToken().Type == ETypeTextToken::InternalIdentifier )
+    {
+        ConsumeNextToken();
+        InternalTypeToken = ConsumeNextToken();
+    }
 
     // Convert std::nullptr_t into FundamentalType nullptr because it is 3 tokens that cannot be easily digested in the tokenizer as one
     if ( OuterType == nullptr && (OuterScope.empty() || OuterScope == L"std") && TypeName == L"nullptr_t" )
@@ -1850,7 +1856,7 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParsePartialSimpleDeclar
         return nullptr;
     }
 
-    // Check against predeclaration of nested types. Nested types cannot be pre-declared
+    // Check against pre-declaration of nested types. Nested types cannot be pre-declared
     if ( ( bHasEnumSpecifier || CSUSpecifier.has_value() ) && OuterType != nullptr )
     {
         assert(!L"Nested types or enumerations cannot be predeclared, and as such cannot have an CSU specifier or an Enum specifier");
@@ -1866,16 +1872,10 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParsePartialSimpleDeclar
         ConsumeNextToken();
 
         std::shared_ptr<ITypeDeclaration> ResultOuterType;
-        if ( InternalTypeToken.has_value() )
-        {
-            const std::shared_ptr<InternalTypeDeclaration> OuterInternalType = std::make_shared<InternalTypeDeclaration>();
-            OuterInternalType->OuterType = OuterType;
-            OuterInternalType->Identifier = InternalTypeToken->InternalIdentifier;
-            OuterInternalType->InternalTypeName = InternalTypeToken->UnnamedEnumOrTypeVariableName;
-            OuterInternalType->LambdaIndex = InternalTypeToken->LambdaIndex;
-            ResultOuterType = OuterInternalType;
-        }
-        else
+
+        // If we do not have an internal type token parsed, this is a user defined type. However, even if we have internal type parsed, it can still be prefixed with a type name,
+        // which would always represent a parent UDT type that we should parse. In that case, we should never have template arguments though
+        if ( !InternalTypeToken.has_value() || !TypeName.empty() )
         {
             // We do not have complete information about this type. For example, we do not know the CSU specifier for this type
             // But the information we have is enough to construct a nested type with optional CV modifiers and CSU/enum specifier
@@ -1886,6 +1886,19 @@ std::shared_ptr<ITypeDeclaration> FTypeTextParseHelper::ParsePartialSimpleDeclar
             OuterUDTType->ClassName = TypeName;
             OuterUDTType->TemplateArguments.Arguments = TemplateArguments;
             ResultOuterType = OuterUDTType;
+        }
+
+        // Parse internal type token if there is one
+        if ( InternalTypeToken.has_value() )
+        {
+            assert(TemplateArguments.empty() && L"Internal type declarations cannot have any template arguments");
+
+            const std::shared_ptr<InternalTypeDeclaration> OuterInternalType = std::make_shared<InternalTypeDeclaration>();
+            OuterInternalType->OuterType = OuterType;
+            OuterInternalType->Identifier = InternalTypeToken->InternalIdentifier;
+            OuterInternalType->InternalTypeName = InternalTypeToken->UnnamedEnumOrTypeVariableName;
+            OuterInternalType->LambdaIndex = InternalTypeToken->LambdaIndex;
+            ResultOuterType = OuterInternalType;
         }
 
         // Pass applied modifiers and CSU/enum specifiers to the child class, since they are applied to it and not to the parent
@@ -2092,7 +2105,7 @@ bool FTypeTextParseHelper::ParseScopeAndTypeName( std::wstring& OutScopeName, st
             ConsumeNextToken();
             PreviousTypeFragment = NextToken.Identifier;
         }
-        // This is some kind of an identifier that is not a part of a typename, so end our typename here
+        // This is some kind of identifier that is not a part of a typename, so end our typename here
         else
         {
             // Make sure we parsed at least one type fragment
@@ -2384,8 +2397,9 @@ int32_t FTypeTextParseHelper::PeekNextTokenInternal(int32_t CurrentOffset, TypeT
     if ( CurrentCharacter == L'`' )
     {
         int32_t StartOffset = CurrentOffset;
-        int32_t CurrentNestingDepth = 0;
-        while ( CurrentOffset < RawText.size() && (RawText[CurrentOffset] != L'\'' || CurrentNestingDepth != 0) )
+        int32_t CurrentNestingDepth = 1;
+        CurrentOffset++;
+        while ( CurrentOffset < RawText.size() && CurrentNestingDepth > 0 )
         {
             // Handle nested internal identifiers
             if (RawText[CurrentOffset] == L'`') CurrentNestingDepth++;
@@ -2393,9 +2407,9 @@ int32_t FTypeTextParseHelper::PeekNextTokenInternal(int32_t CurrentOffset, TypeT
             CurrentOffset++;
         }
         assert(CurrentNestingDepth == 0 && L"Unbalanced escaped identifier parsed from token stream");
-        CurrentOffset++;
+
         OutToken.Type = ETypeTextToken::Identifier;
-        OutToken.Identifier = std::wstring_view( &RawText[StartOffset], CurrentOffset - StartOffset );
+        OutToken.Identifier = std::wstring_view( &RawText[StartOffset + 1], CurrentOffset - StartOffset - 2 );
         return CurrentOffset;
     }
     if ( CurrentCharacter == L'*' )
