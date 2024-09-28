@@ -217,6 +217,21 @@ void CompilationUnit::CollectAndRegisterDependencies( int32_t& CurrentActionNumb
     }
 }
 
+void CompilationUnit::SanitizeGlobalMemberNameForHeaderFilename(std::wstring& SymbolName)
+{
+    // Move all operators into a single file since they would result in filenames like operator+/operator*/operator++, which are not valid
+    // TODO: Ideally such functions should be grouped into the headers of the types on which these operators operate. This is just a workaround that does not actually let you use these operators
+    if (SymbolName.starts_with(L"operator"))
+    {
+        SymbolName = L"GlobalOperatorOverloads";
+    }
+    // Sanitize dangerous internal names that might contain a question mark
+    if (SymbolName.find(L'?') != std::wstring::npos)
+    {
+        nlohmann::detail::replace_substring<std::wstring>(SymbolName, L"?", L"_");
+    }
+}
+
 CompilationUnitReferenceCollector::CompilationUnitReferenceCollector(CompilationUnit* InCompilationUnit) : TypeDependencyCollectorBase( InCompilationUnit->GetHeaderGenerator() ), mCompilationUnit( InCompilationUnit )
 {
 }
@@ -316,6 +331,7 @@ void CompilationUnit::PushGlobalMembersToHeaderFile( GeneratedHeaderFile* Header
         if ( OwnerGenerator->IsDuplicateSymbolDefinition( SymbolName.OriginalFullName ) || SymbolName.bIsTemplateInstantiation )
         {
             std::wstring DuplicateDefinitionHeaderName = SymbolName.LocalName;
+            SanitizeGlobalMemberNameForHeaderFilename(DuplicateDefinitionHeaderName);
 
             // If we have a conflict with a manually overriden header filename, append Generated suffix to the header name
             if ( OwnerGenerator->IsHeaderFilenameOccupiedByManualHeader( DuplicateDefinitionHeaderName ) )
@@ -347,6 +363,7 @@ void CompilationUnit::PushGlobalMembersToHeaderFile( GeneratedHeaderFile* Header
         if ( OwnerGenerator->IsDuplicateSymbolDefinition( SymbolName.OriginalFullName ) || SymbolName.bIsTemplateInstantiation )
         {
             std::wstring DuplicateDefinitionHeaderName = SymbolName.LocalName;
+            SanitizeGlobalMemberNameForHeaderFilename(DuplicateDefinitionHeaderName);
 
             // If we have a conflict with a manually overriden header filename, append Generated suffix to the header name
             if ( OwnerGenerator->IsHeaderFilenameOccupiedByManualHeader( DuplicateDefinitionHeaderName ) )
@@ -518,16 +535,8 @@ void EnumerationInfo::AddCompilationUnitReference(const CompilationUnit* FromCom
 
 std::wstring EnumerationInfo::DetermineHeaderFilename() const
 {
-    std::wstring ResultHeaderFilename;
-    if ( CompilationUnitReferences.size() == 1 )
-    {
-        ResultHeaderFilename = (*CompilationUnitReferences.begin())->GetHeaderFilename();
-    }
-    else
-    {
-        const SymbolNameInfo SymbolInfo = SymbolNameInfo::FromSymbol( EnumerationSymbol );
-        ResultHeaderFilename = SymbolInfo.LocalName;
-    }
+    const SymbolNameInfo SymbolInfo = SymbolNameInfo::FromSymbol( EnumerationSymbol );
+    std::wstring ResultHeaderFilename = SymbolInfo.LocalName;
 
     // If we have a conflict with a manually overriden header filename, append Generated suffix to the header name
     if ( OwnerGenerator->IsHeaderFilenameOccupiedByManualHeader( ResultHeaderFilename ) )

@@ -62,6 +62,7 @@ private:
     bool NeedsHeaderForCompilationUnit() const;
     void PushGlobalMembersToHeaderFile( class GeneratedHeaderFile* HeaderFile ) const;
     void CollectAndRegisterDependencies( int32_t& CurrentActionNumber );
+    static void SanitizeGlobalMemberNameForHeaderFilename( std::wstring& SymbolName );
 };
 
 class CompilationUnitReferenceCollector final : public TypeDependencyCollectorBase
