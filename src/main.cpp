@@ -83,7 +83,10 @@ int main( int ArgC, const char** ArgV )
 
     HeaderGenerator HeaderGenerator{ ExecutableFilePath.filename().wstring(), OutputDirectoryPath };
     HeaderGenerator.LoadDataFromConfig( ConfigManager.GetMergedConfig() );
+
+    time_t StartTime = time(nullptr);
     HeaderGenerator.Generate( GlobalExecutableSymbol );
-    std::cout << "Done with header generation!" << std::endl;
+    time_t TotalTime = time(nullptr) - StartTime;
+    std::cout << "Done with header generation in " << TotalTime << " seconds" << std::endl;
     return 0;
 }
