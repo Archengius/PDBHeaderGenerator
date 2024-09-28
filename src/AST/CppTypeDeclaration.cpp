@@ -84,7 +84,7 @@ static const wchar_t* GetFixedLengthCstdintTypeName(const EBasicType InBasicType
 {
     switch (InBasicType)
     {
-        case EBasicType::FixedLengthInt8: return bIsUnsigned ? L"uint8_t" : L"int8_t";
+        case EBasicType::FixedLengthInt8: return bIsUnsigned ? L"char" : L"char";
         case EBasicType::FixedLengthInt16: return bIsUnsigned ? L"uint16_t" : L"int16_t";
         case EBasicType::FixedLengthInt32: return bIsUnsigned ? L"uint32_t" : L"int32_t";
         case EBasicType::FixedLengthInt64: return bIsUnsigned ? L"uint64_t" : L"int64_t";
