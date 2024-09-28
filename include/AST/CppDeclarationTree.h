@@ -115,6 +115,7 @@ public:
     int32_t BitfieldSize{-1};
     bool bIsStatic{false};
     bool bIsConst{false};
+    bool bIsThreadLocal{false};
     std::wstring ConstantValue;
     bool bIsTemplateSpecialization{false};
     std::vector<TypeTemplateArgument> TemplateArguments;

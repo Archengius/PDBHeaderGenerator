@@ -350,6 +350,10 @@ void UDTDataMemberDeclaration::Print(FormattedTextWriter& TextWriter, const Type
     {
         TextWriter.Append(L"const ");
     }
+    else if ( bIsThreadLocal )
+    {
+        TextWriter.Append(L"thread_local ");
+    }
 
     // Print type and member name
     MemberType->PrintVariableType( TextWriter, Rules, MemberName );

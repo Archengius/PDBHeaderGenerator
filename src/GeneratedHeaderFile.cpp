@@ -491,7 +491,10 @@ std::shared_ptr<UDTDeclarationData> GeneratedHeaderFile::MakeUDT(const CComPtr<I
         const BOOL bIsDataConst = GET_SYMBOL_ATTRIBUTE_CHECKED( DataSymbol, constType );
         const CComPtr<IDiaSymbol> DataTypeSymbol = GET_SYMBOL_ATTRIBUTE_CHECKED( DataSymbol, type );
 
-        assert( DataLocationType == LocIsStatic || DataLocationType == LocIsThisRel || DataLocationType == LocIsBitField || DataLocationType == LocIsConstant );
+        assert( DataLocationType == LocIsStatic || DataLocationType == LocIsThisRel || DataLocationType == LocIsBitField || DataLocationType == LocIsConstant || DataLocationType == LocIsNull || DataLocationType == LocIsTLS );
+
+        // Skip members that do not have the location in the executable
+        if (DataLocationType == LocIsNull) continue;
 
         // Skip static data members that are not public symbols since they are not visible to the outside code
         if ( DataLocationType == LocIsStatic )
@@ -513,7 +516,8 @@ std::shared_ptr<UDTDeclarationData> GeneratedHeaderFile::MakeUDT(const CComPtr<I
         DataDecl->MemberType = CodeGeneration::FormatTypeName( DataTypeSymbol, TypeProvider );
         DataDecl->AccessModifier = CodeGeneration::ConvertAccessModifier( AccessModifier );
         DataDecl->bIsConst = bIsDataConst;
-        DataDecl->bIsStatic = DataLocationType == LocIsStatic || DataLocationType == LocIsConstant;
+        DataDecl->bIsStatic = DataLocationType == LocIsStatic || DataLocationType == LocIsConstant || DataLocationType == LocIsTLS;
+        DataDecl->bIsThreadLocal = DataLocationType == LocIsTLS;
 
         // Emit default initialization in case we emitted a no-op default constructor
         // We only need to do that for basic types and pointers, since they do not have default initializers.
