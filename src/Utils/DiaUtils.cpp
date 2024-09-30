@@ -96,7 +96,9 @@ SymbolNameInfo SymbolNameInfo::FromSymbolName(std::wstring SymbolName)
 
     // Make sure not to cut off namespaces inside of the template arguments. So look for the first template argument start
     // Special case to not accidentally treat operator-> as template specialization
-    if ( SymbolName[ SymbolName.size() - 1 ] == L'>' && !SymbolName.ends_with(L"operator->") && !SymbolName.ends_with(L"operator>") && !SymbolName.ends_with(L"operator>>") && !SymbolName.ends_with(L"operator>=") )
+    if ( SymbolName[ SymbolName.size() - 1 ] == L'>' &&
+        !SymbolName.ends_with(L"operator->") && !SymbolName.ends_with(L"operator>") && !SymbolName.ends_with(L"operator>>") &&
+        !SymbolName.ends_with(L"operator>=") && !SymbolName.ends_with(L"operator<=>") )
     {
         const size_t ArgumentStartIndex = FindTemplateArgumentsStartIndex( SymbolName, SymbolName.size() - 1 );
         assert( ArgumentStartIndex != std::wstring::npos && L"Invalid nesting depth inside of the template specialization name" );
