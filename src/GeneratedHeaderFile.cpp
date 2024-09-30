@@ -372,7 +372,7 @@ std::shared_ptr<UDTDeclarationData> GeneratedHeaderFile::MakeUDT(const CComPtr<I
         FunctionDecl->bIsStatic = ObjectPointerType == nullptr; // we are static if we have no object pointer argument
         FunctionDecl->bIsVirtual = bIsFunctionVirtual;
         FunctionDecl->bIsPureVirtual = bIsFunctionPureVirtual;
-        if ( bIsFunctionVirtual )
+        if ( bIsFunctionVirtual && !bIsConstructorOrDestructor )
         {
             assert( !FunctionNameInfo.bIsTemplateInstantiation && L"templated virtual functions are definitely not a sane thing to support" );
 
