@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdarg>
 #include <fstream>
+#include <iostream>
 
 FormattedTextWriter& FormattedTextWriter::Append(const std::wstring& InString)
 {
@@ -131,8 +132,12 @@ void FormattedTextWriter::DecrementIndentionLevel()
 void FormattedTextWriter::WriteToFile(const std::filesystem::path& FilePath) const
 {
     std::wofstream FileStream( FilePath, std::ios_base::out | std::ios_base::trunc );
-    assert( FileStream.good() );
 
+    if (!FileStream.good())
+    {
+        std::wcerr << L"Failed to open file for read: " << FilePath.wstring() << std::endl;
+        return;
+    }
     const std::wstring ResultText = WriterBuffer.str();
     FileStream.write( ResultText.c_str(), ResultText.size() );
     FileStream.flush();
